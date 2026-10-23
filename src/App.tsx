@@ -6,6 +6,8 @@ import PaymentPage from "@/features/payments/PaymentPage"
 import OrdersPage from "@/features/orders/OrdersPage"
 import OrderDetailPage from "@/features/orders/OrderDetailPage"
 import ProductDetailPage from "@/features/product-detail/ProductDetailPage"
+import PoliciesPage from "@/features/policies/PoliciesPage"
+import { policy_sections } from "@/features/policies/policies"
 import { useCart } from "@/lib/cart/cartContext"
 import { StoreCartNoticeDialog } from "@/features/stores/StoreCartNoticeDialog"
 import { ShopFooter } from "@/components/shop-footer"
@@ -21,6 +23,9 @@ function App() {
         <Route path="/" element={<Catalog />} />
         <Route path="/carrito" element={<CartPage />} />
         <Route path="/pedidos" element={<OrdersPage />} />
+        {policy_sections.map((section) => (
+          <Route key={section.id} path={section.path} element={<PoliciesPage />} />
+        ))}
         <Route path="/pedido/:orderId" element={<OrderDetailPage />} />
         <Route
           path="/checkout"

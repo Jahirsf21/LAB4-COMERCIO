@@ -1,0 +1,28 @@
+.policy-index-link {
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+/* Base UI conserva el panel durante la transición y proporciona su altura real. */
+.policy-index-panel {
+  height: var(--collapsible-panel-height);
+  overflow: hidden;
+  opacity: 1;
+  transition: height 180ms ease, opacity 180ms ease;
+}
+
+.policy-index-panel[data-starting-style],
+.policy-index-panel[data-ending-style] {
+  height: 0;
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .policy-view *,
+  .policy-drawer,
+  .policy-drawer *,
+  [data-slot="sheet-overlay"]:has(~ .policy-drawer) {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
