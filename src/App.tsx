@@ -8,6 +8,7 @@ import OrderDetailPage from "@/features/orders/OrderDetailPage"
 import ProductDetailPage from "@/features/product-detail/ProductDetailPage"
 import { useCart } from "@/lib/cart/cartContext"
 import { StoreCartNoticeDialog } from "@/features/stores/StoreCartNoticeDialog"
+import { ShopFooter } from "@/components/shop-footer"
 import "@/App.css"
 
 
@@ -28,6 +29,7 @@ function App() {
         <Route path="/producto/:productId" element={<ProductDetailPage />} />
         <Route path="/pedido/:orderId/pago" element={<PaymentPage />} />
       </Routes>
+      <ShopFooter />
       <StoreCartNoticeDialog />
     </>
   )

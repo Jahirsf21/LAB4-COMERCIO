@@ -5,7 +5,7 @@ import type { Store, StoreCartChange, StoreCartProduct, StoreCartReconciliation,
 
 // Los nombres coinciden con b2c_stock_by_location del catálogo.
 const stores: Store[] = [
-  { id: "san-jose-bodega-central", province: "San José", locale_name: "Bodega Central" },
+  { id: "san-jose-tienda-escazu", province: "San José", locale_name: "Tienda Escazú" },
   { id: "san-jose-tienda-san-jose", province: "San José", locale_name: "Tienda San José" },
   { id: "limon-tienda-limon", province: "Limón", locale_name: "Tienda Limón" },
   { id: "limon-tienda-guapiles", province: "Limón", locale_name: "Tienda Guápiles" },
