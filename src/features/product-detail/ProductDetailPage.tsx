@@ -1,0 +1,372 @@
+import { useEffect, useLayoutEffect, useState } from "react"
+import { useParams, useSearchParams } from "react-router-dom"
+import { CheckIcon, MapPinIcon, PackageCheckIcon, StarIcon } from "lucide-react"
+import { cn } from "cn"
+import type { VariantsResult } from "@/lib/catalog/types"
+import { get_available_quantity_by_size, get_product_variants, get_sizes_from_stock } from "@/lib/catalog/catalog"
+import { get_cart_quantity_limits } from "@/lib/cart/cart"
+import { AddToCartForm } from "@/features/product-detail/AddToCartForm"
+import { ProductSuggestions } from "@/features/product-detail/ProductSuggestions"
+import { ShopHeader } from "@/components/shop-header"
+import { format_price } from "@/lib/shared/utils"
+import { useStores } from "@/lib/stores/storesContext"
+
+function ProductDetailSkeleton() {
+  return (
+    <main className="mx-auto grid w-full max-w-7xl animate-pulse gap-8 px-4 py-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)] lg:px-8">
+      <div className="grid gap-2 sm:grid-cols-2">
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="aspect-square rounded-lg bg-muted" />
+        ))}
+      </div>
+      <div className="space-y-4">
+        <div className="h-4 w-24 rounded bg-muted" />
+        <div className="h-10 w-3/4 rounded bg-muted" />
+        <div className="h-7 w-36 rounded bg-muted" />
+        <div className="h-24 rounded bg-muted" />
+      </div>
+    </main>
+  );
+}
+
+export default function ProductDetailPage() {
+  const { selected_store } = useStores()
+  const { productId = "" } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [result, setResult] = useState<VariantsResult>();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selection, setSelection] = useState<{
+    sku: string | null;
+    imageIndex: number;
+  }>({
+    sku: null,
+    imageIndex: 0,
+  });
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [productId]);
+
+  useEffect(() => {
+    let active = true;
+
+    get_product_variants(productId)
+      .then((variants) => {
+        if (active) setResult({ productId, variants, error: false });
+      })
+      .catch(() => {
+        if (active) setResult({ productId, variants: [], error: true });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [productId]);
+
+  const isLoading = result?.productId !== productId;
+  const variants = isLoading ? [] : result.variants;
+  const requestedSku = searchParams.get("variante");
+  const requestedSize = searchParams.get("talla");
+  const selectedVariant =
+    variants.find((variant) => variant.sku === requestedSku) ??
+    variants[0];
+  const stockByLocation = selectedVariant?.b2c_stock_by_location ?? [];
+  const sizes = get_sizes_from_stock(stockByLocation);
+  const selectedSize =
+    selectedVariant?.sku === requestedSku && requestedSize && sizes.includes(requestedSize)
+      ? requestedSize
+      : null;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-dvh bg-background">
+        <ShopHeader />
+        <ProductDetailSkeleton />
+      </div>
+    );
+  }
+
+  if (result.error || !selectedVariant) {
+    return (
+      <div className="min-h-dvh bg-background">
+        <ShopHeader />
+        <main className="mx-auto flex max-w-xl flex-col items-center px-4 py-24 text-center">
+          <h1 className="text-2xl font-semibold">Producto no disponible</h1>
+          <p className="mt-3 text-muted-foreground">
+            No pudimos cargar este producto. Intenta de nuevo.
+          </p>
+        </main>
+      </div>
+    );
+  }
+
+  const images = selectedVariant.images.length > 0
+    ? selectedVariant.images
+    : [selectedVariant.image];
+  const selectedImageIndex = selection.sku === selectedVariant.sku
+    ? selection.imageIndex
+    : 0;
+  const selectedImage = images[selectedImageIndex] ?? images[0];
+  const discount = selectedVariant.on_discount
+    ? selectedVariant.b2c_discount
+    : undefined;
+  const currentPrice = discount
+    ? selectedVariant.b2c_price * (1 - discount.percentage / 100)
+    : selectedVariant.b2c_price;
+  const availableSizes = sizes.filter((size) => {
+    const limits = get_cart_quantity_limits(selectedVariant, get_available_quantity_by_size(stockByLocation, size, selected_store));
+    return limits !== null && limits.max_quantity >= limits.min_quantity;
+  }).length;
+  const availableQuantity = selectedSize ? get_available_quantity_by_size(stockByLocation, selectedSize, selected_store) : 0;
+  const quantityLimits = get_cart_quantity_limits(selectedVariant, availableQuantity);
+  const isAvailable = quantityLimits !== null && quantityLimits.max_quantity >= quantityLimits.min_quantity;
+
+  return (
+    <div className="min-h-dvh bg-background">
+      <ShopHeader sticky />
+      <main className="mx-auto w-full max-w-[1440px] px-4 py-5 lg:px-8 lg:py-8">
+        <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-3 lg:grid-cols-[5.5rem_minmax(0,1fr)_minmax(320px,380px)] lg:gap-6 xl:grid-cols-[6rem_minmax(0,640px)_400px] xl:justify-center">
+          <section aria-label="Imágenes del producto" className="contents">
+            <div className="flex max-h-[75vw] flex-col gap-2 overflow-y-auto pr-1 lg:max-h-[calc(100vh-9rem)]">
+              {images.map((image, index) => (
+                <button
+                  key={`${image.url}-${index}`}
+                  type="button"
+                  aria-label={`Ver imagen ${index + 1} de ${images.length}`}
+                  aria-pressed={index === selectedImageIndex}
+                  className={cn(
+                    "aspect-square shrink-0 cursor-pointer overflow-hidden rounded-md border-2 bg-muted outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                    index === selectedImageIndex
+                      ? "border-foreground"
+                      : "border-transparent hover:border-ring",
+                  )}
+                  onClick={() => setSelection({
+                    sku: selectedVariant.sku,
+                    imageIndex: index,
+                  })}
+                >
+                  <img
+                    src={image.url}
+                    alt=""
+                    className="size-full object-cover"
+                    loading="lazy"
+                  />
+                </button>
+              ))}
+            </div>
+
+            <figure className="aspect-square min-w-0 overflow-hidden rounded-lg bg-muted">
+              <img
+                src={selectedImage.url}
+                alt={selectedImage.alt}
+                className="size-full object-cover"
+                decoding="async"
+              />
+            </figure>
+          </section>
+
+          <aside className="col-span-2 mt-5 space-y-7 lg:col-span-1 lg:mt-0 lg:sticky lg:top-6">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+                {selectedVariant.brand}
+              </p>
+              <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+                {selectedVariant.title}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {selectedVariant.categories.join(" · ")}
+              </p>
+              <div className="mt-4 flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xl font-semibold">
+                    {format_price(currentPrice, selectedVariant.currency)}
+                  </p>
+                  {discount && (
+                    <p className="text-sm text-muted-foreground">
+                      <span className="line-through">
+                        {format_price(selectedVariant.b2c_price, selectedVariant.currency)}
+                      </span>{" "}
+                      <span className="font-medium text-foreground">
+                        {discount.percentage}% de descuento
+                      </span>
+                    </p>
+                  )}
+                </div>
+                <p
+                  className="flex items-center gap-1 text-sm font-medium"
+                  aria-label={`Calificación: ${selectedVariant.rating} de 5`}
+                >
+                  <StarIcon aria-hidden="true" className="size-4 fill-amber-400 text-amber-500" />
+                  {selectedVariant.rating}
+                </p>
+              </div>
+            </div>
+
+            <section aria-labelledby="variant-title">
+              <div className="mb-3 flex items-baseline justify-between gap-3">
+                <h2 id="variant-title" className="font-medium">Selecciona un color</h2>
+                <span className="text-sm text-muted-foreground">{selectedVariant.facets.color}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4">
+                {variants.map((variant) => (
+                  <button
+                    key={variant.objectID}
+                    type="button"
+                    aria-pressed={variant.sku === selectedVariant.sku}
+                    aria-label={`Color ${variant.facets.color}`}
+                    disabled={isSubmitting}
+                    className={cn(
+                      "cursor-pointer overflow-hidden rounded-lg border-2 bg-muted outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+                      variant.sku === selectedVariant.sku
+                        ? "border-foreground"
+                        : "border-transparent hover:border-ring",
+                    )}
+                    onClick={() => {
+                      setSelection({ sku: variant.sku, imageIndex: 0 });
+                      setSearchParams({ variante: variant.sku }, { replace: true });
+                    }}
+                  >
+                    <img
+                      src={variant.image.url}
+                      alt=""
+                      className="aspect-square w-full object-cover"
+                      loading="lazy"
+                    />
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section aria-labelledby="size-title">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 id="size-title" className="font-medium">Selecciona una talla</h2>
+                <span className="text-xs text-muted-foreground">
+                  {availableSizes} disponibles
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {sizes.map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    aria-pressed={selectedSize === size}
+                    disabled={isSubmitting}
+                    className={cn(
+                      "min-h-12 cursor-pointer rounded-md border px-2 py-2 text-sm outline-none transition-colors hover:border-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+                      selectedSize === size
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-input",
+                    )}
+                    onClick={() => {
+                      setSelection({ sku: selectedVariant.sku, imageIndex: selectedImageIndex });
+                      setSearchParams({ variante: selectedVariant.sku, talla: size }, { replace: true });
+                    }}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <div className={cn(
+              "flex items-center gap-3 rounded-lg border p-4",
+              !selectedSize || isAvailable ? "border-input" : "border-destructive/40 bg-destructive/5",
+            )}>
+              <PackageCheckIcon aria-hidden="true" className="size-5 shrink-0" />
+              <div>
+                <p className="font-medium">
+                  {!selectedSize ? "Selecciona una talla" : isAvailable ? "Disponible" : "No disponible"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {!selectedSize
+                    ? "La disponibilidad depende del color y la talla."
+                    : isAvailable
+                      ? `${availableQuantity} unidades disponibles`
+                      : "Prueba con otra talla o color."}
+                </p>
+              </div>
+            </div>
+
+            <AddToCartForm
+              key={`${selectedVariant.product_id}::${selectedVariant.sku}::${selectedSize ?? ""}::${selected_store?.id ?? "none"}`}
+              product={selectedVariant}
+              selectedSize={selectedSize}
+              availableQuantity={availableQuantity}
+              isSubmitting={isSubmitting}
+              onSubmittingChange={setIsSubmitting}
+            />
+          </aside>
+        </div>
+
+        <section className="mt-10 border-t border-input pt-8 lg:mt-14 lg:pt-10">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] xl:gap-16">
+            <div>
+              <h2 className="text-2xl font-semibold">Descripción</h2>
+              <p className="mt-4 max-w-2xl leading-7 text-muted-foreground">
+                {selectedVariant.description}
+              </p>
+            </div>
+            <div>
+              <h2 className="text-2xl font-semibold">Especificaciones</h2>
+              <dl className="mt-4 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+              <DetailRow label="Color" value={selectedVariant.facets.color} />
+              <DetailRow label="SKU" value={selectedVariant.sku} />
+              {selectedVariant.facets.technology && (
+                <DetailRow label="Tecnología" value={selectedVariant.facets.technology} />
+              )}
+              <DetailRow label="Materiales" value={selectedVariant.facets.materials.join(", ")} />
+              <DetailRow label="Género" value={selectedVariant.facets.gender.join(", ")} />
+               {selectedVariant.b2c_min_order_quantity > 1 && (
+                 <DetailRow label="Compra mínima" value={`${selectedVariant.b2c_min_order_quantity} unidades`} />
+               )}
+               <DetailRow label="Máximo por compra" value={`${selectedVariant.b2c_max_order_quantity} ${selectedVariant.b2c_max_order_quantity === 1 ? "unidad" : "unidades"}`} />
+              {selectedVariant.facets.recommend_use && (
+                <DetailRow
+                  label="Uso recomendado"
+                  value={selectedVariant.facets.recommend_use.join(", ")}
+                />
+              )}
+              </dl>
+            </div>
+          </div>
+
+          {selectedSize && stockByLocation.length > 0 && (
+            <div className="mt-8 border-t border-input pt-8">
+              <h2 className="flex items-center gap-2 text-xl font-semibold">
+                <MapPinIcon aria-hidden="true" className="size-5" />
+                Disponibilidad por tienda
+              </h2>
+              <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+                {stockByLocation.map((location) => (
+                  <li
+                    key={`${location.province}-${location.locale_name}`}
+                    className="flex items-start justify-between gap-4 rounded-lg bg-muted/60 p-4 text-sm"
+                  >
+                    <div>
+                      <p className="font-medium">{location.locale_name}</p>
+                      <p className="text-muted-foreground">{location.province}</p>
+                    </div>
+                    <span className="flex items-center gap-1 whitespace-nowrap">
+                      <CheckIcon aria-hidden="true" className="size-4" />
+                      {get_available_quantity_by_size([location], selectedSize) ?? "—"} disponibles
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+        <ProductSuggestions product={selectedVariant} />
+      </main>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[7rem_1fr] gap-3 border-b border-input/70 pb-3">
+      <dt className="font-medium">{label}</dt>
+      <dd className="text-muted-foreground">{value}</dd>
+    </div>
+  );
+}
