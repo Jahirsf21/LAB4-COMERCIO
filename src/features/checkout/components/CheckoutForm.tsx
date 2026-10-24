@@ -5,8 +5,9 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegen
 import { CheckoutBuyerFields } from "@/features/checkout/components/CheckoutBuyerFields"
 import { CheckoutDeliveryFields } from "@/features/checkout/components/CheckoutDeliveryFields"
 import { CheckoutDeliveryMethod } from "@/features/checkout/components/CheckoutDeliveryMethod"
+import { CheckoutTermsAcceptance } from "@/features/checkout/components/CheckoutTermsAcceptance"
 import { StoreSelector } from "@/features/stores/StoreSelector"
-import { validate_buyer_fields, validate_delivery_fields } from "@/lib/checkout/checkout"
+import { validate_buyer_fields, validate_delivery_fields, validate_terms_acceptance } from "@/lib/checkout/checkout"
 import { get_name_from_hacienda, validate_identification } from "@/lib/identification/identification"
 import type { BuyerInfo, CheckoutFormData, DeliveryInfo, DeliveryMethod } from "@/lib/checkout/types"
 import { useCart } from "@/lib/cart/cartContext"
@@ -32,6 +33,7 @@ export function CheckoutForm({ formData, onChange, onSubmit, isGeneratingOrder, 
   const [deliveryErrors, setDeliveryErrors] = useState<Partial<Record<keyof DeliveryInfo, string>>>({})
   const [deliveryMethodError, setDeliveryMethodError] = useState<string | undefined>()
   const [storeError, setStoreError] = useState<string | undefined>()
+  const [termsError, setTermsError] = useState<string | undefined>()
   const [nameResult, setNameResult] = useState<{ key: string; full_name: string; error?: string } | null>(null)
   const identificationNumber = formData.buyer.identification_number.trim()
   const identificationType = formData.buyer.identification_type
@@ -155,10 +157,21 @@ export function CheckoutForm({ formData, onChange, onSubmit, isGeneratingOrder, 
   }
 
   /**
+   * Marca o desmarca la aceptación de los términos, guardando la fecha ISO del momento en que se marca.
+   * Al marcarla borra el mensaje de error; al desmarcarla elimina la fecha registrada.
+   * @param checked Nuevo estado de la casilla.
+   * @returns No retorna ningún valor.
+   */
+  function handleTermsChange(checked: boolean): void {
+    onChange({ ...formData, terms_accepted_at: checked ? new Date().toISOString() : null })
+    if (checked) setTermsError(undefined)
+  }
+
+  /**
    * Valida los datos del comprador y la entrega al enviar el formulario.
    * Si hay errores, los muestra y enfoca el primer campo inválido.
    * Espera un nombre válido de Hacienda cuando la identificación requiere consulta.
-   * Exige modalidad y tienda, y dirección solamente para envío.
+   * Exige modalidad y tienda, dirección solamente para envío y la aceptación de los términos.
    * Delega la preparación y generación al checkout cuando el formulario es válido.
    * @param event Evento de envío del formulario.
    * @returns Promesa que termina al procesar el formulario.
@@ -172,6 +185,7 @@ export function CheckoutForm({ formData, onChange, onSubmit, isGeneratingOrder, 
     const store_error = selected_store || formData.delivery_method === null ? undefined
       : formData.delivery_method === "PICKUP" ? "Selecciona la tienda donde quieres retirar el pedido."
         : storeAssignmentError ?? "Selecciona una tienda para el envío antes de continuar."
+    const terms_error = validate_terms_acceptance(formData.terms_accepted_at)
 
     if (!isManual && buyer_errors.full_name) {
       const name_error = buyer_errors.full_name
@@ -187,16 +201,18 @@ export function CheckoutForm({ formData, onChange, onSubmit, isGeneratingOrder, 
     setDeliveryErrors(delivery_errors)
     setDeliveryMethodError(delivery_method_error)
     setStoreError(store_error)
-    const has_errors = Object.keys(buyer_errors).length > 0 || Object.keys(delivery_errors).length > 0 || Boolean(delivery_method_error) || Boolean(store_error)
+    setTermsError(terms_error)
+    const has_errors = Object.keys(buyer_errors).length > 0 || Object.keys(delivery_errors).length > 0 || Boolean(delivery_method_error) || Boolean(store_error) || Boolean(terms_error)
     if (!has_errors) {
       await onSubmit({ ...formData, buyer })
       return
     }
-
+    
     window.requestAnimationFrame(() => {
       const invalid_field = formRef.current?.querySelector<HTMLElement>(
-        '[aria-invalid="true"]:not(:disabled):not([aria-disabled="true"]):not([readonly]):not([type="hidden"])',
-      ) ?? (store_error ? formRef.current?.querySelector<HTMLElement>("#checkout-store-retry") : null)
+        '[aria-invalid="true"]:not(:disabled):not([aria-disabled="true"]):not([readonly]):not([type="hidden"])' +
+        (store_error ? ", #checkout-store-retry" : ""),
+      )
       invalid_field?.focus({ preventScroll: true })
       invalid_field?.scrollIntoView({ block: "center" })
     })
@@ -259,6 +275,8 @@ export function CheckoutForm({ formData, onChange, onSubmit, isGeneratingOrder, 
             <CheckoutDeliveryFields delivery={formData.delivery} errors={deliveryErrors}
               onChange={handleDeliveryChange} onBlur={handleDeliveryBlur} />
           )}
+          <FieldSeparator />
+          <CheckoutTermsAcceptance checked={formData.terms_accepted_at !== null} error={termsError} onChange={handleTermsChange} />
         </FieldGroup>
       </fieldset>
     </form>
