@@ -6,8 +6,10 @@ import PaymentPage from "@/features/payments/PaymentPage"
 import OrdersPage from "@/features/orders/OrdersPage"
 import OrderDetailPage from "@/features/orders/OrderDetailPage"
 import ProductDetailPage from "@/features/product-detail/ProductDetailPage"
+import PoliciesPage from "@/features/policies/PoliciesPage"
 import { useCart } from "@/lib/cart/cartContext"
 import { StoreCartNoticeDialog } from "@/features/stores/StoreCartNoticeDialog"
+import { ShopFooter } from "@/components/shop-footer"
 import "@/App.css"
 
 
@@ -20,6 +22,7 @@ function App() {
         <Route path="/" element={<Catalog />} />
         <Route path="/carrito" element={<CartPage />} />
         <Route path="/pedidos" element={<OrdersPage />} />
+        <Route path="/politicas-y-ayuda" element={<PoliciesPage />} />
         <Route path="/pedido/:orderId" element={<OrderDetailPage />} />
         <Route
           path="/checkout"
@@ -28,6 +31,7 @@ function App() {
         <Route path="/producto/:productId" element={<ProductDetailPage />} />
         <Route path="/pedido/:orderId/pago" element={<PaymentPage />} />
       </Routes>
+      <ShopFooter />
       <StoreCartNoticeDialog />
     </>
   )

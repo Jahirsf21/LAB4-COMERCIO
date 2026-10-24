@@ -1,15 +1,16 @@
-import type { BuyerInfo, DeliveryInfo } from "@/lib/checkout/types"
+import type { BuyerInfo, DeliveryInfo, TermsAcceptance } from "@/lib/checkout/types"
 import type { OrderAvailability, OrderDetails, OrderItem, OrderPagination, OrderStatus, PrepareOrderInput, PrepareOrderResult, PreparedOrder, PreparedOrderItem } from "@/lib/orders/types"
 import type { Payment, PaymentResult } from "@/lib/payments/types"
 import { get_cart_shipping_cost, get_cart_subtotal, get_cart_tax, get_item_subtotal, parse_cart_data } from "@/lib/cart/cart"
 import { get_cart_validation } from "@/lib/catalog/catalog"
-import { validate_buyer_fields, validate_delivery_fields } from "@/lib/checkout/checkout"
+import { is_valid_terms_date, validate_buyer_fields, validate_delivery_fields, validate_terms_acceptance } from "@/lib/checkout/checkout"
 import { get_store } from "@/lib/stores/stores"
 import { get_stored_json, is_nonempty_string, is_positive_integer, is_record, is_valid_currency, is_valid_image, is_valid_price, save_stored_list } from "@/lib/shared/utils"
 
 /**
  * Valida comprador, entrega, stock y precios de una sola sede, sin guardar ni cobrar.
  * Exige dirección solo para envío; para retiro prepara dirección nula y costo de envío cero.
+ * Rechaza el pedido si no se aceptaron los términos y registra la aceptación con la fecha en que se marcó la casilla.
  * Solicita revisar el carrito si cambian precios o cantidades permitidas.
  * @param input Formulario con el nombre del comprador resuelto, carrito completo y tienda elegida.
  * @returns Promesa con los datos preparados, una solicitud de revisión, un rechazo o un error de consulta.
@@ -30,6 +31,9 @@ export async function prepare_order(input: PrepareOrderInput): Promise<PrepareOr
     const delivery_error = Object.values(validate_delivery_fields(delivery))[0]
     if (delivery_error) return { status: "rejected", message: delivery_error }
   }
+  const terms_error = validate_terms_acceptance(input.terms_accepted_at)
+  if (terms_error || !is_valid_terms_date(input.terms_accepted_at)) return { status: "rejected", message: terms_error ?? "" }
+  const terms_acceptance: TermsAcceptance = { accepted: true, acceptedAt: input.terms_accepted_at }
   const cart = parse_cart_data(input.cart)
   if (cart.length === 0 || cart.length !== input.cart.length) {
     return { status: "rejected", message: "Revisa los productos y cantidades del carrito antes de preparar el pedido." }
@@ -64,7 +68,7 @@ export async function prepare_order(input: PrepareOrderInput): Promise<PrepareOr
     }))
     return { status: "ready", order: {
       buyer, store, delivery_method, delivery: delivery_method === "PICKUP" ? null : delivery,
-      currency: checked_cart[0].currency, subtotal, tax, shipping, total, items,
+      currency: checked_cart[0].currency, subtotal, tax, shipping, total, items, termsAcceptance: terms_acceptance,
     } }
   } catch {
     return { status: "error", message: "No pudimos comprobar los productos de la tienda. Intenta nuevamente." }
@@ -119,6 +123,17 @@ function parse_order_delivery(delivery: unknown): DeliveryInfo | null {
     postal_code: delivery.postal_code.trim(),
     additional_information: delivery.additional_information.trim(),
   }
+}
+
+/**
+ * Valida la aceptación de los términos de un pedido.
+ * Los pedidos sin una aceptación válida, como los guardados antes de exigirla, se descartan.
+ * @param terms_acceptance Aceptación sin validar.
+ * @returns Aceptación validada, o null si accepted no es true o acceptedAt no es una fecha válida.
+ */
+function parse_order_terms_acceptance(terms_acceptance: unknown): TermsAcceptance | null {
+  if (!is_record(terms_acceptance) || terms_acceptance.accepted !== true || !is_valid_terms_date(terms_acceptance.acceptedAt)) return null
+  return { accepted: true, acceptedAt: terms_acceptance.acceptedAt }
 }
 
 /**
@@ -181,6 +196,7 @@ function parse_order_payment(raw_payment: unknown, order: Pick<OrderDetails, "id
  * Por cada pedido:
  * - Valida el identificador, el número, la fecha, la moneda, los montos y el estado.
  * - Valida la persona compradora, la entrega y los productos mediante parse_order_buyer(), parse_order_delivery() y parse_order_item().
+ * - Valida la aceptación de los términos mediante parse_order_terms_acceptance().
  * - Valida que payment sea null o un pago válido según parse_order_payment(), y que su estado sea compatible con el pedido.
  * - Descarta los pedidos con un identificador o número repetido.
  * @param orders_data Datos de los pedidos sin validar.
@@ -206,11 +222,12 @@ export function parse_orders_data(orders_data: unknown): OrderDetails[] {
     const buyer = parse_order_buyer(raw_order.buyer)
     const delivery = raw_order.delivery_method === "SHIPPING" ? parse_order_delivery(raw_order.delivery) : null
     const items = raw_order.items.map((raw_item) => parse_order_item(raw_item, order_id))
+    const terms_acceptance = parse_order_terms_acceptance(raw_order.termsAcceptance)
     const payment = raw_order.payment === null ? null : parse_order_payment(raw_order.payment, { id: order_id, total: raw_order.total, currency: raw_order.currency })
     const has_inconsistent_payment = (raw_order.status === "CONFIRMED" && payment?.status !== "APPROVE") ||
       (raw_order.status !== "CONFIRMED" && payment?.status === "APPROVE") ||
       (raw_order.status === "CANCELLED" && payment?.status === "PENDING")
-    if (!store || !buyer || (raw_order.delivery_method === "SHIPPING" && !delivery) ||
+    if (!store || !buyer || !terms_acceptance || (raw_order.delivery_method === "SHIPPING" && !delivery) ||
       (raw_order.delivery_method === "PICKUP" && (raw_order.delivery !== null || raw_order.shipping !== 0)) ||
       items.some((item) => item === null) || (raw_order.payment !== null && !payment) ||
       has_inconsistent_payment || orders_by_id.has(order_id) || order_numbers.has(raw_order.order_number)) {
@@ -231,6 +248,7 @@ export function parse_orders_data(orders_data: unknown): OrderDetails[] {
       shipping: raw_order.shipping,
       total: raw_order.total,
       status: raw_order.status,
+      termsAcceptance: terms_acceptance,
       items: items.filter((item) => item !== null),
       payment,
     })
@@ -288,12 +306,15 @@ export function create_order_item(item: PreparedOrderItem, order_id: string): Or
 
 /**
  * Crea un pedido PENDING con los datos verificados, sin recalcularlos desde otro carrito o sede.
+ * Copia la aceptación de los términos y nunca crea un pedido sin una aceptación válida.
  * @param prepared_order Datos preparados.
  * @param order_number Número del pedido.
- * @returns Pedido creado sin pago, o null si no tiene productos o un consecutivo válido.
+ * @returns Pedido creado sin pago, o null si no tiene productos, un consecutivo válido o la aceptación de los términos.
  */
 export function create_order(prepared_order: PreparedOrder, order_number: number): OrderDetails | null {
   if (prepared_order.items.length === 0 || !is_positive_integer(order_number)) return null
+  const terms_acceptance = parse_order_terms_acceptance(prepared_order.termsAcceptance)
+  if (!terms_acceptance) return null
   const order_id = crypto.randomUUID()
   return {
     id: order_id,
@@ -309,6 +330,7 @@ export function create_order(prepared_order: PreparedOrder, order_number: number
     shipping: prepared_order.shipping,
     total: prepared_order.total,
     status: "PENDING",
+    termsAcceptance: terms_acceptance,
     items: prepared_order.items.map((item) => create_order_item(item, order_id)),
     payment: null,
   }
@@ -400,6 +422,16 @@ export function get_order_availability(order: OrderDetails, has_unsaved_result =
  */
 export function format_order_date(created_at: string): string {
   return new Intl.DateTimeFormat("es-CR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(created_at))
+}
+
+/**
+ * Formatea la fecha de aceptación de los términos como DD/MM/AAAA.
+ * Usa la zona horaria del navegador, igual que format_order_date().
+ * @param accepted_at Fecha ISO válida de la aceptación.
+ * @returns Fecha con día y mes de dos dígitos y año de cuatro dígitos.
+ */
+export function format_terms_acceptance_date(accepted_at: string): string {
+  return new Intl.DateTimeFormat("es-CR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(accepted_at))
 }
 
 /**
