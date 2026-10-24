@@ -1,6 +1,6 @@
 import type { ProductImage } from "@/lib/catalog/types"
 import type { CartItem, CartValidationResult } from "@/lib/cart/types"
-import type { BuyerInfo, CheckoutFormData, DeliveryInfo, DeliveryMethod } from "@/lib/checkout/types"
+import type { BuyerInfo, CheckoutFormData, DeliveryInfo, DeliveryMethod, TermsAcceptance } from "@/lib/checkout/types"
 import type { CardPaymentData, Payment } from "@/lib/payments/types"
 import type { Store } from "@/lib/stores/types"
 
@@ -38,6 +38,7 @@ export type OrderPagination = {
 /**
  * Datos del pedido, comprador, entrega y montos de la compra.
  * tax es el monto del IVA y shipping el costo de envío.
+ * termsAcceptance registra la aceptación de los Términos y Condiciones; todo pedido debe tenerla.
  */
 export type Order = {
   id: string
@@ -53,6 +54,7 @@ export type Order = {
   shipping: number
   total: number
   status: OrderStatus
+  termsAcceptance: TermsAcceptance
 }
 
 /**
@@ -72,7 +74,7 @@ export type PrepareOrderInput = CheckoutFormData & {
 export type PreparedOrderItem = Omit<OrderItem, "id" | "order_id">
 
 /** Datos verificados de una única sede, todavía sin identificadores ni pago. */
-export type PreparedOrder = Pick<Order, "buyer" | "store" | "delivery_method" | "delivery" | "currency" | "subtotal" | "tax" | "shipping" | "total"> & {
+export type PreparedOrder = Pick<Order, "buyer" | "store" | "delivery_method" | "delivery" | "currency" | "subtotal" | "tax" | "shipping" | "total" | "termsAcceptance"> & {
   items: PreparedOrderItem[]
 }
 
