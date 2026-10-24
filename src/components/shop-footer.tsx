@@ -2,15 +2,8 @@ import { Link } from "react-router-dom"
 import amex_logo from "@/assets/cards/amex.svg"
 import mastercard_logo from "@/assets/cards/mastercard.svg"
 import visa_logo from "@/assets/cards/visa.svg"
+import { policies_index } from "@/lib/policies/policies"
 import { get_store_groups } from "@/lib/stores/stores"
-
-const policies_and_help = [
-  { to: "/", label: "Términos y Condiciones" },
-  { to: "/carrito", label: "Política de Devoluciones" },
-  { to: "/pedidos", label: "Política de Envíos" },
-  { to: "/pedidos", label: "Política de Privacidad" },
-  { to: "/pedidos", label: "Preguntas Frecuentes (FAQ)" },
-]
 
 const payment_methods = [
   { src: visa_logo, alt: "Visa" },
@@ -40,10 +33,10 @@ export function ShopFooter() {
         <nav aria-labelledby="footer-links">
           <h2 id="footer-links" className="mb-3 text-base font-semibold">Políticas y Ayuda</h2>
           <ul className="space-y-2 text-sm">
-            {policies_and_help.map((link) => (
-              <li key={link.to}>
-                <Link to={link.to} className="text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  {link.label}
+            {policies_index.map((section) => (
+              <li key={section.id}>
+                <Link to={`/politicas-y-ayuda#${section.id}`} className="text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  {section.title}
                 </Link>
               </li>
             ))}
