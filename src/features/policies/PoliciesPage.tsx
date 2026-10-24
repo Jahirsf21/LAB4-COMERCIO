@@ -1,3 +1,4 @@
+import { useLayoutEffect } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { ArrowLeftIcon, BookOpenCheckIcon, CalendarDaysIcon, ChevronRightIcon, LayoutListIcon } from "lucide-react"
 import { ShopHeader } from "@/components/shop-header"
@@ -7,10 +8,14 @@ import { PolicySectionCard } from "@/features/policies/components/PolicySectionC
 import { get_policy_selection, policies_document, policy_sections } from "@/lib/policies/policies"
 
 export default function PoliciesPage() {
-  const { hash } = useLocation()
+  const { hash, key: navigation_key } = useLocation()
   const selection = get_policy_selection(hash.slice(1))
   const active_id = selection.id
   const visible_sections = selection.type === "all" ? policy_sections : "section" in selection ? [selection.section] : []
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" })
+  }, [navigation_key])
 
   return (
     <div className="min-h-dvh bg-background">
